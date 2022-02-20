@@ -29,6 +29,13 @@ else
 	abiType="arm64"
 fi
 
+echo "[*] Close SELinux"
+selinux=$(getenforce)
+if [[ $selinux -ne "Permissive"]]; then
+	setenforce 0
+	echo $selinux
+fi
+
 echo "" > /data/mobile-deploy/tools_env.rc
 chmod 700 /data/mobile-deploy/tools_env.rc
 
@@ -41,7 +48,7 @@ fi
 
 if [[ $abiType == arm64 ]]; then
 	echo "start frida-server"
-	nohup /data/mobile-deploy/hluda-server-14.2.13-android-arm64 -l 0.0.0.0:$firda_server_bind_port > /sdcard/frida-server.log 2>&1 &
+	nohup /data/mobile-deploy/hluda-server-15.1.17-android-arm64 -l 0.0.0.0:$firda_server_bind_port > /sdcard/frida-server.log 2>&1 &
 	
 	echo "alias tcpforward=/data/mobile-deploy/tcpforward_linux_arm64" >> /data/mobile-deploy/tools_env.rc
 	
@@ -53,7 +60,7 @@ if [[ $abiType == arm64 ]]; then
 	
 elif [[ $abiType == arm ]]; then
 	echo "start frida-server"
-	nohup /data/mobile-deploy/hluda-server-14.2.13-android-arm -l 0.0.0.0:$firda_server_bind_port > /sdcard/frida-server.log 2>&1 &
+	nohup /data/mobile-deploy/hluda-server-15.1.17-android-arm -l 0.0.0.0:$firda_server_bind_port > /sdcard/frida-server.log 2>&1 &
 	
 	echo "alias tcpforward=/data/mobile-deploy/tcpforward_linux_arm" >> /data/mobile-deploy/tools_env.rc
 	
@@ -64,7 +71,7 @@ elif [[ $abiType == arm ]]; then
 	echo "alias telnet='/data/mobile-deploy/busybox-armv7m telnet'" >> /data/mobile-deploy/tools_env.rc
 else
 	echo "start frida-server"
-	nohup /data/mobile-deploy/hluda-server-14.2.13-android-x86 -l 0.0.0.0:$firda_server_bind_port > /sdcard/frida-server.log 2>&1 &
+	nohup /data/mobile-deploy/hluda-server-15.1.17-android-x86 -l 0.0.0.0:$firda_server_bind_port > /sdcard/frida-server.log 2>&1 &
 	
 	echo "alias tcpforward=/data/mobile-deploy/tcpforward_linux_x86" >> /data/mobile-deploy/tools_env.rc
 	

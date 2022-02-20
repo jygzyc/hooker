@@ -3,7 +3,7 @@
 HOOKER_DRIVER=$(cat .hooker_driver)
 while :
 do
-	frida-ps $HOOKER_DRIVER -ai | grep -v '@' | grep -v '    -  '
+	frida-ps $HOOKER_DRIVER -ai
 	echo "Enter the need to attach package."
     read -p ": " package
     if [[ $package = ex ]] || [[ $package = exit ]] || [[ $package = quit ]] || [[ $package = q ]]; then

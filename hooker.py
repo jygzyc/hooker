@@ -31,7 +31,7 @@ def checkRadarDex(packageName, online_script):
     if online_script.exports.containsclass(radarClass):
         return
     data = readRadarDexfile()
-    radarDexPath = '/data/user/0/'+packageName+'/radar.dex';
+    radarDexPath = '/data/user/0/'+packageName+'/radar.dex'
     if not online_script.exports.checkfile(radarDexPath, len(data)):
         radarDexBase64 = base64.b64encode(data).decode()
         #info("update radar.dex......"+str(len(radarDexBase64)))
@@ -60,7 +60,7 @@ def is_number(s):
 
 def getPidMap():
     pidMap = {}
-    lines = os.popen("frida-ps -U").readlines();
+    lines = os.popen("frida-ps -U").readlines()
     for line in lines:
         result = re.search("(\d+)\s+([a-z\d\.]+)($|:)", line.strip())
         if not result:
@@ -68,11 +68,33 @@ def getPidMap():
         pidMap[result.group(1)] = result.group(2)
     return pidMap
 
-#target可以是pid或者packageName    
+def getAppNameMap():
+    appNameMap = {}
+    hooker_driver = ""
+    with open(".hooker_driver", "r+") as f:
+        hooker_driver = f.read().strip()
+    lines = os.popen("frida-ps " + hooker_driver + " -a").readlines()
+    for line in lines:
+        result = re.search("(\d+)\s+([a-z\d\.\u4e00-\u9fa5]+)\s+([a-z\d\.]+)", line.strip())
+        if not result:
+            continue
+        appNameMap[result.group(1)] = [result.group(2), result.group(3)]
+    return appNameMap
+
+#attach时只能是appName
+#传入值可为pid
 def attach(target):
-    packageName = target
-    if is_number(target):#pid
-        packageName = getPidMap()[target]
+    app_name = ""
+    package_name = ""
+    try:
+        if is_number(target):#pid
+            app_name = getAppNameMap()[target][0]
+            package_name = getAppNameMap()[target][1]
+        else:
+            warn("get Package Name failed. pid = " + target)
+            return
+    except Exception:
+        warn(traceback.format_exc())
     online_session = None
     online_script = None
     rdev = None
@@ -85,22 +107,18 @@ def attach(target):
             rdev = frida.get_remote_device()
         else:
             rdev = frida.get_usb_device(1000)
-        #print(f"attach {target}")
-        if is_number(target):
-            pid = int(target)
-            online_session = frida.core.Session(rdev._impl.attach(pid))
-        else:
-            online_session = rdev.attach(target)
+        info(f"attach: {target}, PackageName: {package_name}, AppName: {app_name}")
+        online_session = rdev.attach(app_name)
         if online_session == None:
             warn("attaching fail to " + target)
         online_script = online_session.create_script(run_env.rpc_jscode)
         online_script.on('message', on_message)
         online_script.load()
-        checkRadarDex(packageName, online_script)
-        createHookingEnverment(packageName, online_script.exports.mainactivity())
+        checkRadarDex(package_name, online_script)
+        createHookingEnverment(target, app_name, package_name, online_script.exports.mainactivity())
     except Exception:
         warn(traceback.format_exc())   
-    return online_session,online_script,packageName
+    return online_session,online_script,package_name
     
 
 def detach(online_session):
@@ -111,7 +129,7 @@ def existsClass(target,className):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         info(online_script.exports.containsclass(className))
     except Exception:
         warn(traceback.format_exc())  
@@ -122,8 +140,8 @@ def findclasses(target, classRegex):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
-        info(online_script.exports.findclasses(classRegex));
+        online_session,online_script,_ = attach(target)
+        info(online_script.exports.findclasses(classRegex))
     except Exception:
         warn(traceback.format_exc())  
     finally:    
@@ -133,8 +151,8 @@ def findclasses2(target, className):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
-        info(online_script.exports.findclasses2(className));
+        online_session,online_script,_ = attach(target)
+        info(online_script.exports.findclasses2(className))
     except Exception:
         warn(traceback.format_exc())  
     finally:    
@@ -154,19 +172,19 @@ def createFile(filename, text):
 def onlyCheckHookingEnverment(target):
     online_session = None
     try:
-        online_session,_,_ = attach(target);
+        online_session,_,_ = attach(target)
     except Exception:
         print(traceback.format_exc())  
     finally:
         detach(online_session)
 
-def createHookingEnverment(packageName, mainActivity):
+def createHookingEnverment(pid, appName, packageName, mainActivity):
     if not os.path.exists(packageName):
         os.makedirs(packageName)
         os.makedirs(packageName+"/xinit")
         shellPrefix = "#!/bin/bash\nHOOKER_DRIVER=$(cat ../.hooker_driver)\n"
-        logHooking = shellPrefix + "echo \"hooking $1\" > log\ndate | tee -ai log\n" + "frida $HOOKER_DRIVER -l $1 " + packageName + " | tee -ai log"
-        attach_shell = shellPrefix + "frida $HOOKER_DRIVER -l $1 " + packageName
+        logHooking = shellPrefix + "echo \"hooking $1\" > log\ndate | tee -ai log\n" + "frida $HOOKER_DRIVER -l $1 " + appName + " | tee -ai log"
+        attach_shell = shellPrefix + "frida $HOOKER_DRIVER -l $1 " + appName
         spawn_shell = f"{shellPrefix}\nfrida $HOOKER_DRIVER --no-pause -f {packageName} -l $1"
         xinitPyScript = run_env.xinitPyScript + "xinitDeploy('"+packageName+"')"
         spiderPyScript = run_env.spiderPyScript.replace("{appPackageName}", packageName).replace("{mainActivity}", mainActivity) 
@@ -206,8 +224,8 @@ def hookJs(target, hookCmdArg, savePath = None):
     packageName = None
     try:
         ganaretoionJscode = ""
-        online_session,online_script,packageName = attach(target);
-        appversion = online_script.exports.appversion();
+        online_session,online_script,packageName = attach(target)
+        appversion = online_script.exports.appversion()
         classes = hookCmdArg.split(",")
         for classN in classes:
             spaceSpatrater = classN.find(":")
@@ -216,15 +234,15 @@ def hookJs(target, hookCmdArg, savePath = None):
             if spaceSpatrater > 0:
                 className = classN[:spaceSpatrater]
                 toSpace = classN[spaceSpatrater+1:]
-            jscode = online_script.exports.hookjs(className, toSpace);
+            jscode = online_script.exports.hookjs(className, toSpace)
             ganaretoionJscode += ("\n//"+classN+"\n")
             ganaretoionJscode += jscode
         
         if savePath == None:
             defaultFilename = hookCmdArg.replace(".", "_").replace(":", "_").replace("$", "_").replace("__", "_") + ".js"
-            savePath = packageName+"/"+defaultFilename;
+            savePath = packageName+"/"+defaultFilename
         else:
-            savePath = packageName+"/"+savePath;
+            savePath = packageName+"/"+savePath
         if len(ganaretoionJscode):
             ganaretoionJscode = run_env.loadxinit_dexfile_template_jscode.replace("{PACKAGENAME}", packageName) + "\n" + ganaretoionJscode
             warpExtraInfo = "//crack by " + packageName + " " + appversion + "\n"
@@ -244,10 +262,10 @@ def hookStr(target, keyword):
     online_session = None
     packageName = None
     try:
-        online_session,_,packageName = attach(target);
+        online_session,_,packageName = attach(target)
         jscode = io.open('./js/string_hooker.js','r',encoding= 'utf8').read()
         jscode = jscode.replace("惊雷", keyword)
-        savePath = packageName+"/str_"+keyword+".js";
+        savePath = packageName+"/str_"+keyword+".js"
         createFile(savePath, jscode)
         info("Hooking js code have generated. Path is " + savePath+".")
     except Exception:
@@ -260,10 +278,10 @@ def hookParma(target, keyword):
     online_session = None
     packageName = None
     try:
-        online_session,_,packageName = attach(target);
+        online_session,_,packageName = attach(target)
         jscode = io.open('./js/param_hook.js','r',encoding= 'utf8').read()
         jscode = jscode.replace("NStokensig", keyword)
-        savePath = packageName+"/param_"+keyword+".js";
+        savePath = packageName+"/param_"+keyword+".js"
         createFile(savePath, jscode)
         info("Hooking js code have generated. Path is " + savePath+".")
     except Exception:
@@ -276,7 +294,7 @@ def printActivitys(target):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         info(online_script.exports.activitys())
     except Exception:
         print(traceback.format_exc())  
@@ -287,7 +305,7 @@ def printServices(target):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         info(online_script.exports.services())
     except Exception:
         print(traceback.format_exc())  
@@ -298,7 +316,7 @@ def printObject(target, objectId):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         info(online_script.exports.objectinfo(objectId))
     except Exception:
         print(traceback.format_exc())  
@@ -309,7 +327,7 @@ def object2Explain(target, objectId):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         info(online_script.exports.objecttoexplain(objectId))
     except Exception:
         print(traceback.format_exc())  
@@ -320,9 +338,9 @@ def printView(target, viewId):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         report = online_script.exports.viewinfo(viewId)
-        info(report);
+        info(report)
     except Exception:
         print(traceback.format_exc())  
     finally:
@@ -334,7 +352,7 @@ def printModuleName(target, moduleName):
     online_session = None
     online_script = None
     try:
-        online_session,online_script,_ = attach(target);
+        online_session,online_script,_ = attach(target)
         info(online_script.exports.so(moduleName))
     except Exception:
         print(traceback.format_exc())
@@ -345,7 +363,7 @@ if __name__ == '__main__':
     try:    
         opts, args = getopt.getopt(sys.argv[1:], "hp:x:a:b:c:d:v:s:t:l:e:j:k:l:g:o:m:",[])
     except getopt.GetoptError:    
-        sys.exit(2);
+        sys.exit(2)
     #这个packageName可以是进程名也可以是进程号
     packageName = None
     e = None
@@ -379,24 +397,24 @@ if __name__ == '__main__':
         elif op in ("-l"):     
             LhookLine = value
         elif op in ("-g"):     
-            genarateEnv = True;
+            genarateEnv = True
         elif op in ("-o", "--out"):
-            out = value;
+            out = value
         elif op in ("-a"):
-            activity = True;
+            activity = True
         elif op in ("-b"):
-            service = True;
+            service = True
         elif op in ("-c"):
-            objectId = value;
+            objectId = value
         elif op in ("-d"):
-            object2ExplainObjectId = value;
+            object2ExplainObjectId = value
         elif op in ("-v"):
-            viewId = value;
+            viewId = value
         elif op in ("-m"):
-            moduleName = value;
+            moduleName = value
     if packageName == None:
         warn("packageName is none")
-        sys.exit(2);
+        sys.exit(2)
     
     #初始化应用目录
     if genarateEnv and packageName:
@@ -429,5 +447,5 @@ if __name__ == '__main__':
         printModuleName(packageName, moduleName)
     elif not genarateEnv:
         warn(opts)
-        sys.exit(2);
+        sys.exit(2)
     
