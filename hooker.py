@@ -75,7 +75,7 @@ def getAppNameMap():
         hooker_driver = f.read().strip()
     lines = os.popen("frida-ps " + hooker_driver + " -a").readlines()
     for line in lines:
-        result = re.search("(\d+)\s+([a-z\d\.\u4e00-\u9fa5]+)\s+([a-z\d\.]+)", line.strip())
+        result = re.search("(\d+)\s+([a-zA-Z\d\.\u4e00-\u9fa5]+)\s+([a-z\d\.]+)", line.strip())
         if not result:
             continue
         appNameMap[result.group(1)] = [result.group(2), result.group(3)]
